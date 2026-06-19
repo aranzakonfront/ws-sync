@@ -1,9 +1,8 @@
 """
 endpoints/applicant.py
 Procesa registros del WS /Applicant.
-SC: Bubble primero (por id_estudiante, registro más reciente sin importar programa),
-fallback a SAPPO por (id_estudiante, CodPrograma). Todo resuelto en resolver_sc.py;
-aquí solo se consulta el mapa final por (id_estudiante, CodPrograma).
+SC se resuelve directo en SAPPO por (id_estudiante, CodPrograma),
+igual que Student y Enrollment (resuelto en resolver_sc.py).
 """
 
 import logging
