@@ -154,11 +154,9 @@ def get_sc_batch_sin_programa(ids_estudiante: list) -> dict:
     Dado una lista de id_estudiante, retorna {id_estudiante: SC} tomando
     el primer registro que SAPPO devuelva para ese alumno, sin filtrar por programa.
 
-    Usado únicamente como fallback para:
-      - Billing, cuando el alumno no aparece en Student/Enrollment/Applicant
-        de la misma corrida (no hay SC ya resuelto que reutilizar).
-      - Applicant, cuando Bubble no devuelve SC para ese alumno y se necesita
-        resolverlo en SAPPO sin tener aún un programa_id confirmado.
+    Usado únicamente como fallback para Billing, cuando el alumno no aparece
+    en Student/Enrollment/Applicant de la misma corrida (no hay SC ya
+    resuelto que reutilizar).
     """
     if not ids_estudiante:
         return {}

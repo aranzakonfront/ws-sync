@@ -11,6 +11,7 @@ from db_supabase import (
     calcular_hash, get_hashes_existentes,
     upsert_registros, insertar_en_queue
 )
+from utils import to_int_or_none
 
 logger = logging.getLogger(__name__)
 TABLA = "ws_applicant"
@@ -55,7 +56,7 @@ def procesar(registros_ws: list, sc_por_programa: dict, periodo: str) -> Resulta
             "universidad":       r.get("Universidad"),
             "campus":            r.get("Campus"),
             "id_solicitante":    r.get("IDSolicitante"),
-            "id_persona":        r.get("IDPersona"),
+            "id_persona":        to_int_or_none(r.get("IDPersona")),
             "ap_paterno":        r.get("ApPaterno"),
             "ap_materno":        r.get("ApMaterno"),
             "nombre":            r.get("Nombre"),

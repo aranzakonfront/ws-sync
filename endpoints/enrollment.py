@@ -10,6 +10,7 @@ from db_supabase import (
     calcular_hash, get_hashes_existentes,
     upsert_registros, insertar_en_queue
 )
+from utils import to_int_or_none
 
 logger = logging.getLogger(__name__)
 TABLA = "ws_enrollment"
@@ -63,7 +64,7 @@ def procesar(registros_ws: list, sc_por_programa: dict, periodo: str) -> Resulta
             "nom_materia":    r.get("NomMateria"),
             "id_solicitante": r.get("IDSolicitante"),
             "id_estudiante":  id_est,
-            "id_persona":     r.get("IDPersona"),
+            "id_persona":     to_int_or_none(r.get("IDPersona")),
             "fech_ini_clases":r.get("FechIniClases"),
             "fech_fin_clases":r.get("FechFinClases"),
             "cod_edo_mat":    r.get("CodEdoMat"),
