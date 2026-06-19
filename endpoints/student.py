@@ -30,7 +30,7 @@ class ResultadoEndpoint:
     en_queue: int = 0
 
 
-def procesar(registros_ws: list, sc_por_programa: dict, periodo: str) -> ResultadoEndpoint:
+def procesar(registros_ws: list, sc_por_programa: dict, periodo: str, escribir_queue: bool = True) -> ResultadoEndpoint:
     """
     Procesa todos los registros de Student para un periodo dado.
 
@@ -38,9 +38,9 @@ def procesar(registros_ws: list, sc_por_programa: dict, periodo: str) -> Resulta
         registros_ws:     lista de dicts tal como los devuelve el WS
         sc_por_programa:  {(id_estudiante, programa_id): SC} resuelto globalmente
         periodo:          ID del periodo (ej: '202592')
-
-    Returns:
-        ResultadoEndpoint con métricas de la corrida
+        escribir_queue:   si False, no genera entradas en sync_queue_ws
+                          (usado por backfill.py para no duplicar trabajo
+                          de Bubble en periodos históricos que ya tiene)
     """
     if not registros_ws:
         logger.info(f"[Student][{periodo}] Sin registros del WS")
@@ -141,7 +141,7 @@ def procesar(registros_ws: list, sc_por_programa: dict, periodo: str) -> Resulta
     # --- 3. Escribir en Supabase ---
     if registros_upsert:
         upsert_registros(TABLA, registros_upsert)
-    if entradas_queue:
+    if entradas_queue and escribir_queue:
         insertar_en_queue(entradas_queue)
         res.en_queue = len(entradas_queue)
 

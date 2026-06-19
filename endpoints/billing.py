@@ -47,7 +47,7 @@ def get_params_fecha() -> dict:
     }
 
 
-def procesar(registros_ws: list, sc_por_estudiante: dict) -> ResultadoEndpoint:
+def procesar(registros_ws: list, sc_por_estudiante: dict, escribir_queue: bool = True) -> ResultadoEndpoint:
     """
     Nota: Billing no recibe `periodo` como parámetro ya que usa rango de fechas.
     El campo `periodo` en los registros del WS es parte del payload del pago.
@@ -137,7 +137,7 @@ def procesar(registros_ws: list, sc_por_estudiante: dict) -> ResultadoEndpoint:
 
     if registros_upsert:
         upsert_registros(TABLA, registros_upsert)
-    if entradas_queue:
+    if entradas_queue and escribir_queue:
         insertar_en_queue(entradas_queue)
         res.en_queue = len(entradas_queue)
 

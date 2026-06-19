@@ -24,7 +24,7 @@ class ResultadoEndpoint:
     en_queue: int = 0  # Section no va a sync_queue (Bubble no la necesita por ahora)
 
 
-def procesar(registros_ws: list[dict], sc_dict: dict, periodo: str) -> ResultadoEndpoint:
+def procesar(registros_ws: list[dict], sc_dict: dict, periodo: str, escribir_queue: bool = True) -> ResultadoEndpoint:
     if not registros_ws:
         logger.info(f"[Section][{periodo}] Sin registros del WS")
         return ResultadoEndpoint()

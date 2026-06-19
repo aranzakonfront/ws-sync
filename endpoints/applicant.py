@@ -28,7 +28,7 @@ class ResultadoEndpoint:
     en_queue: int = 0
 
 
-def procesar(registros_ws: list, sc_por_programa: dict, periodo: str) -> ResultadoEndpoint:
+def procesar(registros_ws: list, sc_por_programa: dict, periodo: str, escribir_queue: bool = True) -> ResultadoEndpoint:
     if not registros_ws:
         logger.info(f"[Applicant][{periodo}] Sin registros del WS")
         return ResultadoEndpoint()
@@ -123,7 +123,7 @@ def procesar(registros_ws: list, sc_por_programa: dict, periodo: str) -> Resulta
 
     if registros_upsert:
         upsert_registros(TABLA, registros_upsert)
-    if entradas_queue:
+    if entradas_queue and escribir_queue:
         insertar_en_queue(entradas_queue)
         res.en_queue = len(entradas_queue)
 
