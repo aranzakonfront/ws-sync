@@ -1,6 +1,6 @@
 {
   "deploy": {
-    "cronSchedule": "30 23 * * *",
+    "cronSchedule": "30 5 * * *",
     "startCommand": "python main.py"
   }
 }
