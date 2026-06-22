@@ -136,7 +136,7 @@ def procesar(registros_ws: list, sc_por_estudiante: dict, escribir_queue: bool =
         })
 
     if registros_upsert:
-        upsert_registros(TABLA, registros_upsert)
+        upsert_registros(TABLA, registros_upsert, batch_size=100)
     if entradas_queue and escribir_queue:
         insertar_en_queue(entradas_queue)
         res.en_queue = len(entradas_queue)
@@ -151,8 +151,9 @@ def procesar(registros_ws: list, sc_por_estudiante: dict, escribir_queue: bool =
 
 def _get_hashes_batch(ids_pago: list[str]) -> dict[tuple, str]:
     """
-    Carga hashes solo de los IDPago presentes en el batch actual,
-    evitando cargar todo el histórico de billing.
+    Carga hashes solo de los IDPago presentes en el batch actual.
+    Pagina en chunks de 100 IDs para evitar "URL component 'query' too long"
+    que ocurre cuando hay miles de IDPago en un solo filtro IN.
     """
     if not ids_pago:
         return {}
@@ -160,16 +161,18 @@ def _get_hashes_batch(ids_pago: list[str]) -> dict[tuple, str]:
     from db_supabase import get_client
     client = get_client()
     resultado = {}
+    chunk_size = 100
 
-    # Filtrar solo los IDPago del batch
-    resp = (
-        client.table(TABLA)
-        .select("id_pago,codigo_detalle,row_hash")
-        .in_("id_pago", ids_pago)
-        .execute()
-    )
-    for fila in resp.data or []:
-        pk = (fila["id_pago"], fila["codigo_detalle"])
-        resultado[pk] = fila.get("row_hash")
+    for i in range(0, len(ids_pago), chunk_size):
+        chunk = ids_pago[i : i + chunk_size]
+        resp = (
+            client.table(TABLA)
+            .select("id_pago,codigo_detalle,row_hash")
+            .in_("id_pago", chunk)
+            .execute()
+        )
+        for fila in resp.data or []:
+            pk = (fila["id_pago"], fila["codigo_detalle"])
+            resultado[pk] = fila.get("row_hash")
 
     return resultado

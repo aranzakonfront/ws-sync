@@ -33,6 +33,23 @@ def procesar(registros_ws: list, sc_por_programa: dict, periodo: str, escribir_q
         logger.info(f"[Applicant][{periodo}] Sin registros del WS")
         return ResultadoEndpoint()
 
+    # Deduplicar por id_estudiante: el WS a veces regresa el mismo alumno dos
+    # veces en la misma respuesta, lo que causa "ON CONFLICT DO UPDATE command
+    # cannot affect row a second time" en Postgres al mandarlo en un solo batch.
+    # Nos quedamos con la última ocurrencia de cada IDEstudiante.
+    total_original = len(registros_ws)
+    vistos = {}
+    for r in registros_ws:
+        id_est = str(r.get("IDEstudiante", "")).strip()
+        if id_est:
+            vistos[id_est] = r
+    registros_ws = list(vistos.values())
+    if len(registros_ws) < total_original:
+        logger.info(
+            f"[Applicant][{periodo}] {total_original - len(registros_ws)} duplicados "
+            f"eliminados antes del upsert"
+        )
+
     res = ResultadoEndpoint(registros_ws=len(registros_ws))
     hashes_existentes = get_hashes_existentes(TABLA, PK_COLS)
 

@@ -94,10 +94,11 @@ def get_hashes_existentes(tabla: str, pk_cols: list[str]) -> dict[tuple, str]:
 # Upsert genérico
 # ============================================================
 
-def upsert_registros(tabla: str, registros: list[dict]) -> int:
+def upsert_registros(tabla: str, registros: list[dict], batch_size: int = 500) -> int:
     """
-    Hace upsert en batch de hasta 500 registros a la vez.
-    Retorna el número de filas procesadas.
+    Hace upsert en batch a la tabla indicada.
+    batch_size: reducir a 100 para tablas con payloads grandes (ej. billing)
+    para evitar errores 400/520 de Supabase por request demasiado grande.
     """
     if not registros:
         return 0
