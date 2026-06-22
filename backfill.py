@@ -270,73 +270,9 @@ def backfill_billing():
 if __name__ == "__main__":
     inicio_total = time.time()
     logger.info("#" * 60)
-    logger.info("# BACKFILL RETRY — solo lo que falló + periodo 202585 corregido")
+    logger.info("# BACKFILL RETRY — solo Billing (duplicados corregidos)")
     logger.info("#" * 60)
 
-    # Periodo 202585 (antes tenía typo 202685, regresó 0 datos): carga completa
-    logger.info("--- Carga completa de periodo 202585 (typo corregido) ---")
-    for periodo in PERIODOS_NUEVOS:
-        inicio_periodo = time.time()
-        datos_student    = fetch_periodico("Student",    periodo)
-        datos_enrollment = fetch_periodico("Enrollment", periodo)
-        datos_applicant  = fetch_periodico("Applicant",  periodo)
-        datos_section    = fetch_periodico("Section",    periodo)
-
-        pares_sappo = set()
-        for r in datos_student + datos_enrollment:
-            id_est = str(r.get("IDEstudiante", "")).strip()
-            cod_programa = str(r.get("CodPrograma", "")).strip()
-            if id_est and cod_programa:
-                pares_sappo.add((id_est, cod_programa))
-
-        pares_applicant_set = set()
-        for r in datos_applicant:
-            id_est = str(r.get("IDEstudiante", "")).strip()
-            cod_programa = str(r.get("CodPrograma", "")).strip()
-            if id_est and cod_programa:
-                pares_applicant_set.add((id_est, cod_programa))
-
-        try:
-            sc_resultado = resolve_all(
-                pares_sappo=list(pares_sappo),
-                pares_applicant=list(pares_applicant_set),
-                ids_billing=[],
-            )
-            sc_por_programa = sc_resultado["por_programa"]
-        except Exception as e:
-            logger.error(f"[{periodo}] Error resolviendo SC: {e}")
-            sc_por_programa = {}
-
-        for nombre, fn_procesar, datos in [
-            ("student",    student.procesar,    datos_student),
-            ("enrollment", enrollment.procesar, datos_enrollment),
-            ("applicant",  applicant.procesar,  datos_applicant),
-            ("section",    section.procesar,    datos_section),
-        ]:
-            inicio = time.time()
-            try:
-                res = fn_procesar(datos, sc_por_programa, periodo, escribir_queue=False)
-                registrar_control(
-                    endpoint=f"backfill_{nombre}", periodo=periodo,
-                    registros_ws=res.registros_ws, sc_resueltos=res.sc_resueltos,
-                    insertados=res.insertados, actualizados=res.actualizados,
-                    sin_cambios=res.sin_cambios, en_queue=res.en_queue,
-                    status="success", error_msg=None, duracion_seg=time.time() - inicio,
-                )
-            except Exception as e:
-                logger.error(f"[backfill_{nombre}][{periodo}] Error: {e}")
-                registrar_control(
-                    endpoint=f"backfill_{nombre}", periodo=periodo,
-                    registros_ws=len(datos), sc_resueltos=0,
-                    insertados=0, actualizados=0, sin_cambios=0, en_queue=0,
-                    status="error", error_msg=str(e), duracion_seg=time.time() - inicio,
-                )
-        logger.info(f"--- Periodo {periodo} completado en {time.time()-inicio_periodo:.1f}s ---")
-
-    # Applicant 202602 y 202612 fallaron por duplicados (ya corregido)
-    backfill_applicant_periodos(PERIODOS_SOLO_APPLICANT)
-
-    # Billing falló en todos los bloques (ya corregido: chunks de 100 + batch 100)
     backfill_billing()
 
     logger.info("=" * 60)

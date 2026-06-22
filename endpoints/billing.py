@@ -56,6 +56,20 @@ def procesar(registros_ws: list, sc_por_estudiante: dict, escribir_queue: bool =
         logger.info("[Billing] Sin registros del WS")
         return ResultadoEndpoint()
 
+    # Deduplicar por (id_pago, codigo_detalle): el WS puede regresar el mismo
+    # registro dos veces en la misma respuesta mensual, causando el error
+    # "ON CONFLICT DO UPDATE command cannot affect row a second time".
+    total_original = len(registros_ws)
+    vistos = {}
+    for r in registros_ws:
+        id_pago = str(r.get("IDPago", "")).strip()
+        cod_detalle = str(r.get("CODIGO_DETALLE", "")).strip()
+        if id_pago and cod_detalle:
+            vistos[(id_pago, cod_detalle)] = r
+    registros_ws = list(vistos.values())
+    if len(registros_ws) < total_original:
+        logger.info(f"[Billing] {total_original - len(registros_ws)} duplicados eliminados antes del upsert")
+
     res = ResultadoEndpoint(registros_ws=len(registros_ws))
 
     # Solo cargar hashes de los IDPago presentes en este batch
