@@ -1,6 +1,6 @@
 {
   "deploy": {
     "cronSchedule": "30 5 * * *",
-    "startCommand": "python load_from_json.py"
+    "startCommand": "python main.py"
   }
 }
