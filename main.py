@@ -37,7 +37,7 @@ from periodos import get_periodos, periodos_para_endpoint
 from ws_client import llamar_endpoint
 from resolver_sc import resolve_all
 from db_supabase import registrar_control
-from endpoints import enrollment, student, applicant, section, billing
+from endpoints import enrollment, student, applicant, section, billing, billing2
 
 
 # ============================================================
@@ -182,6 +182,7 @@ def run():
     _procesar_periodico("applicant",  resultados_fetch, sc_por_programa, applicant.procesar)
     _procesar_periodico("section",    resultados_fetch, {}, section.procesar)
     _procesar_billing(resultados_fetch, sc_por_estudiante)
+    _procesar_billing2(resultados_fetch, sc_por_estudiante)
 
     duracion_total = time.time() - inicio_total
     logger.info("=" * 60)
@@ -278,7 +279,47 @@ def _procesar_billing(resultados_fetch: dict, sc_por_estudiante: dict):
         )
 
 
-def _enviar_alerta(mensaje: str):
+def _procesar_billing2(resultados_fetch: dict, sc_por_estudiante: dict):
+    """Billing2: usa los mismos registros crudos del WS que Billing, enriquecidos con SAPPO."""
+    fetch = resultados_fetch.get("billing", {})
+    registros = fetch.get("datos", [])
+    errores_fetch = fetch.get("errores", [])
+    inicio = time.time()
+
+    if not registros and errores_fetch:
+        registrar_control(
+            endpoint="billing2", periodo=None,
+            registros_ws=0, sc_resueltos=0,
+            insertados=0, actualizados=0, sin_cambios=0, en_queue=0,
+            status="error",
+            error_msg="Billing WS falló; billing2 sin datos: " + "; ".join(errores_fetch),
+            duracion_seg=0,
+        )
+        return
+
+    try:
+        res = billing2.procesar(registros, sc_por_estudiante)
+        registrar_control(
+            endpoint="billing2", periodo=None,
+            registros_ws=res.registros_ws,
+            sc_resueltos=res.sc_resueltos,
+            insertados=res.insertados,
+            actualizados=res.actualizados,
+            sin_cambios=res.sin_cambios,
+            en_queue=0,
+            status="success" if not errores_fetch else "partial",
+            error_msg="; ".join(errores_fetch) if errores_fetch else None,
+            duracion_seg=time.time() - inicio,
+        )
+    except Exception as e:
+        logger.error(f"[billing2] Error procesando: {e}")
+        registrar_control(
+            endpoint="billing2", periodo=None,
+            registros_ws=len(registros), sc_resueltos=0,
+            insertados=0, actualizados=0, sin_cambios=0, en_queue=0,
+            status="error", error_msg=str(e),
+            duracion_seg=time.time() - inicio,
+        )
     """Envía alerta por email si las variables SMTP están configuradas."""
     smtp_host = os.environ.get("SMTP_HOST")
     if not smtp_host:

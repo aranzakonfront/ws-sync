@@ -188,3 +188,47 @@ def get_sc_batch_sin_programa(ids_estudiante: list) -> dict:
         f"{len(resultado)}/{len(ids_unicos)} IDs"
     )
     return resultado
+
+
+def get_totales_materias_batch(ids_estudiante: list) -> dict:
+    """
+    Consulta report.totales_materias_estudiante en SAPPO para una lista de IDs.
+    Retorna {id_estudiante: {aprobadas, reprobadas, cursando, precio_neto_materia}}.
+
+    Usado por el procesador de ws_billing2 para enriquecer los pagos del día
+    con el avance académico y precio neto de materias del alumno.
+    """
+    if not ids_estudiante:
+        return {}
+
+    ids_unicos = list(set(ids_estudiante))
+
+    with get_sappo_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    tme.estudiante_id,
+                    tme.aprobadas,
+                    tme.reprobadas,
+                    tme.cursando,
+                    tme.precio_neto_materia
+                FROM report.totales_materias_estudiante tme
+                WHERE tme.estudiante_id = ANY(%s)
+            """, (ids_unicos,))
+
+            resultado = {}
+            for row in cur.fetchall():
+                id_est = str(row[0]).strip() if row[0] else None
+                if id_est:
+                    resultado[id_est] = {
+                        "aprobadas":          row[1],
+                        "reprobadas":         row[2],
+                        "cursando":           row[3],
+                        "precio_neto_materia": float(row[4]) if row[4] is not None else None,
+                    }
+
+    logger.info(
+        f"Totales materias resueltos desde SAPPO: "
+        f"{len(resultado)}/{len(ids_unicos)} IDs"
+    )
+    return resultado
