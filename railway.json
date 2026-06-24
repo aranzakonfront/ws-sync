@@ -1,6 +1,6 @@
 {
   "deploy": {
     "cronSchedule": "30 5 * * *",
-    "startCommand": "python backfill_billing2.py"
+    "startCommand": "python main.py"
   }
 }
