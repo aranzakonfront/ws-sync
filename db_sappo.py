@@ -216,7 +216,8 @@ def get_totales_materias_batch(ids_estudiante: list) -> dict:
                     tme.aprobadas,
                     tme.reprobadas,
                     tme.cursando,
-                    tme.precio_neto_materia
+                    tme.precio_neto_materia,
+                    tme.materias_cargadas
                 FROM report.totales_materias_estudiante tme
                 WHERE tme.estudiante_id = ANY(%s)
             """, (ids_unicos,))
@@ -226,10 +227,11 @@ def get_totales_materias_batch(ids_estudiante: list) -> dict:
                 id_est = str(row[0]).strip() if row[0] else None
                 if id_est:
                     resultado[id_est] = {
-                        "aprobadas":          row[1],
-                        "reprobadas":         row[2],
-                        "cursando":           row[3],
+                        "aprobadas":           row[1],
+                        "reprobadas":          row[2],
+                        "cursando":            row[3],
                         "precio_neto_materia": float(row[4]) if row[4] is not None else None,
+                        "materias_cargadas":   row[5],
                     }
 
     logger.info(
