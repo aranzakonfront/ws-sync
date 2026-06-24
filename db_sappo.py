@@ -57,16 +57,21 @@ def get_periodos():
     with get_sappo_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
 
-            # Periodo actual
+            # Periodo actual: el más reciente cuyo inicio no supere hoy.
+            # Usamos start_date <= CURRENT_DATE ORDER BY start_date DESC
+            # en vez de BETWEEN start_date AND end_date, porque SAPPO a veces
+            # tiene end_date incorrecta (más corta que la real) y el job
+            # dejaría de correr aunque el periodo siga vigente.
             cur.execute("""
                 SELECT p.id, p.arranque, p.start_date, p.end_date
                 FROM core.periodo p
-                WHERE CURRENT_DATE BETWEEN p.start_date AND p.end_date
+                WHERE p.start_date <= CURRENT_DATE
+                ORDER BY p.start_date DESC
                 LIMIT 1
             """)
             actual_row = cur.fetchone()
             if not actual_row:
-                raise ValueError("No se encontró periodo actual en SAPPO (CURRENT_DATE no está en ningún periodo)")
+                raise ValueError("No se encontró periodo actual en SAPPO (no hay ningún periodo con start_date <= hoy)")
             actual = dict(actual_row)
 
             # Periodo anterior (arranque - 1)
