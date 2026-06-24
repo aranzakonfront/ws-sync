@@ -42,7 +42,8 @@ def _calcular_saldo_y_alcanza(monto_str, precio_neto):
     """
     Retorna (saldo_alumno, alcanza).
     saldo_alumno: 'Deuda' | 'A favor' | None
-    alcanza:      True | False | None (NULL cuando Deuda o sin precio)
+    alcanza:      True si A favor y abs(Monto) >= precio_neto_materia
+                  False en cualquier otro caso (Deuda, no alcanza, sin precio)
     """
     try:
         monto = float(monto_str) if monto_str not in (None, "") else None
@@ -50,10 +51,10 @@ def _calcular_saldo_y_alcanza(monto_str, precio_neto):
         monto = None
 
     if monto is None:
-        return None, None
+        return None, False
 
     if monto >= 0:
-        return "Deuda", None   # NULL para Deuda
+        return "Deuda", False
     else:
         # A favor
         if precio_neto is not None:
@@ -62,7 +63,7 @@ def _calcular_saldo_y_alcanza(monto_str, precio_neto):
                 return "A favor", alcanza
             except (ValueError, TypeError):
                 pass
-        return "A favor", None
+        return "A favor", False
 
 
 def procesar(registros_ws: list, sc_por_estudiante: dict,
@@ -150,6 +151,7 @@ def procesar(registros_ws: list, sc_por_estudiante: dict,
             "aprobadas":          datos_sappo.get("aprobadas"),
             "reprobadas":         datos_sappo.get("reprobadas"),
             "cursando":           datos_sappo.get("cursando"),
+            "materias_cargadas":  datos_sappo.get("materias_cargadas"),
             # Calculados
             "saldo_alumno":       saldo_alumno,
             "alcanza":            alcanza,
