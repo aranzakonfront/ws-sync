@@ -184,6 +184,15 @@ def run():
     _procesar_billing(resultados_fetch, sc_por_estudiante)
     _procesar_billing2(resultados_fetch, sc_por_estudiante)
 
+    # Refresca aprobadas/reprobadas/cursando de SAPPO para pagos de los últimos 30 días
+    # (billing2 normal solo procesa pagos del día; este paso mantiene actualizado
+    # el avance académico para los registros recientes ya guardados).
+    try:
+        import refresh_billing2
+        refresh_billing2.run()
+    except Exception as e:
+        logger.error(f"[refresh_billing2] Error: {e}")
+
     duracion_total = time.time() - inicio_total
     logger.info("=" * 60)
     logger.info(f"WS SYNC completado en {duracion_total:.1f}s")

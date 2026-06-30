@@ -90,6 +90,35 @@ def get_hashes_existentes(tabla: str, pk_cols: list[str]) -> dict[tuple, str]:
     return resultado
 
 
+def get_filas_por_fecha(tabla: str, columna_fecha: str, fecha_desde_iso: str) -> list[dict]:
+    """
+    Obtiene todas las filas de `tabla` donde columna_fecha >= fecha_desde_iso.
+    Usado por refresh_billing2.py para acotar el refresco a una ventana de tiempo
+    (ej. solo pagos del último mes), en vez de reprocesar todo el histórico.
+    """
+    client = get_client()
+    resultado = []
+    page_size = 1000
+    offset = 0
+
+    while True:
+        resp = (
+            client.table(tabla)
+            .select("*")
+            .gte(columna_fecha, fecha_desde_iso)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        filas = resp.data or []
+        resultado.extend(filas)
+        if len(filas) < page_size:
+            break
+        offset += page_size
+
+    logger.debug(f"[{tabla}] {len(resultado)} filas con {columna_fecha} >= {fecha_desde_iso}")
+    return resultado
+
+
 # ============================================================
 # Upsert genérico
 # ============================================================
