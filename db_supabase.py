@@ -117,7 +117,48 @@ def get_filas_por_fecha(tabla: str, columna_fecha: str, fecha_desde_iso: str) ->
 
     logger.debug(f"[{tabla}] {len(resultado)} filas con {columna_fecha} >= {fecha_desde_iso}")
     return resultado
+def get_sc_desde_supabase(ids_estudiante: list) -> dict:
+    """
+    Último fallback para resolver SC: busca en las tablas espejo de Supabase
+    (ws_enrollment → ws_student → ws_applicant) para IDs que no pudieron
+    resolverse vía SAPPO. Útil cuando billing no encuentra SC pero enrollment
+    ya lo tiene guardado de una corrida anterior.
+    Retorna {id_estudiante: SC}.
+    """
+    if not ids_estudiante:
+        return {}
 
+    client = get_client()
+    resultado = {}
+    ids_pendientes = list(set(ids_estudiante))
+
+    for tabla in ["ws_enrollment", "ws_student", "ws_applicant"]:
+        if not ids_pendientes:
+            break
+
+        chunk_size = 100
+        for i in range(0, len(ids_pendientes), chunk_size):
+            chunk = ids_pendientes[i: i + chunk_size]
+            resp = (
+                client.table(tabla)
+                .select("id_estudiante,sc")
+                .in_("id_estudiante", chunk)
+                .not_.is_("sc", "null")
+                .execute()
+            )
+            for fila in resp.data or []:
+                id_est = fila.get("id_estudiante")
+                sc = fila.get("sc")
+                if id_est and sc and id_est not in resultado:
+                    resultado[id_est] = sc
+
+        # Actualizar pendientes: quitar los ya resueltos
+        ids_pendientes = [i for i in ids_pendientes if i not in resultado]
+
+    logger.info(
+        f"SC desde Supabase (fallback): {len(resultado)}/{len(set(ids_estudiante))} IDs"
+    )
+    return resultado
 
 # ============================================================
 # Upsert genérico
