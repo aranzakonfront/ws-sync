@@ -25,6 +25,7 @@ endpoints y llama a resolve_all() una sola vez por corrida.
 
 import logging
 from db_sappo import get_sc_batch_por_programa, get_sc_batch_sin_programa
+from db_supabase import get_sc_desde_supabase  # agregar al import existente
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,51 @@ def resolve_all(
         )
         sc_fallback_billing = get_sc_batch_sin_programa(ids_billing_sin_sc)
         sc_por_estudiante.update(sc_fallback_billing)
+
+    logger.info(
+        f"SC resueltos -> por programa: {len(sc_por_programa)} pares | "
+        f"por estudiante (Billing): {len(sc_por_estudiante)} IDs"
+    )
+  
+
+    # --- Paso final: fallback Supabase para IDs sin SC en ningún lado ---
+    # Si billing (o cualquier endpoint) no pudo resolver SC vía SAPPO,
+    # busca en las tablas espejo de Supabase donde ya puede estar guardado
+    # de una corrida anterior (ej. ws_enrollment tiene el SC de ese alumno).
+    ids_sin_sc = [
+        id_est for id_est in set(ids_billing)
+        if id_est not in sc_por_estudiante
+    ]
+    # También aplica para los pares sin SC en por_programa
+    ids_sin_sc_prog = list({
+        id_est for (id_est, _) in (set(pares_sappo) | set(pares_applicant))
+        if not any(
+            sc for (e, _), sc in sc_por_programa.items()
+            if e == id_est and sc
+        )
+    })
+    todos_sin_sc = list(set(ids_sin_sc + ids_sin_sc_prog))
+
+    if todos_sin_sc:
+        logger.info(f"{len(todos_sin_sc)} IDs sin SC → fallback Supabase")
+        sc_supabase = get_sc_desde_supabase(todos_sin_sc)
+
+        # Aplicar al mapa por_estudiante (billing)
+        for id_est, sc in sc_supabase.items():
+            if id_est not in sc_por_estudiante:
+                sc_por_estudiante[id_est] = sc
+
+        # Aplicar al mapa por_programa para los pares que no tienen SC
+        for (id_est, programa), sc_actual in list(sc_por_programa.items()):
+            if not sc_actual and id_est in sc_supabase:
+                sc_por_programa[(id_est, programa)] = sc_supabase[id_est]
+
+        # Para pares que no existen en por_programa aún
+        for id_est, sc in sc_supabase.items():
+            for pares in [pares_sappo, pares_applicant]:
+                for (e, prog) in pares:
+                    if e == id_est and (e, prog) not in sc_por_programa:
+                        sc_por_programa[(e, prog)] = sc
 
     logger.info(
         f"SC resueltos -> por programa: {len(sc_por_programa)} pares | "
