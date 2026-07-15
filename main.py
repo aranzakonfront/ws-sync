@@ -20,7 +20,6 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -60,7 +59,7 @@ def fetch_endpoint_periodico(nombre_ws: str, nombre_interno: str, info_periodos:
         except RuntimeError as e:
             logger.error(f"[{nombre_ws}][{periodo_id}] Error definitivo: {e}")
             errores.append(f"{periodo_id}: {e}")
-            datos_por_periodo[periodo_id] = []   # tabla no se borra, conserva último valor
+            datos_por_periodo[periodo_id] = []
 
     return {"datos": datos_por_periodo, "errores": errores}
 
@@ -129,9 +128,9 @@ def run():
     logger.info(f"Fetch WS completado en {duracion_fetch:.1f}s")
 
     # --- Paso 3: Recolectar pares (id_estudiante, CodPrograma) e IDs de Billing ---
-    pares_sappo = set()      # Student + Enrollment: (id_estudiante, programa_id)
-    pares_applicant = set()  # Applicant: (id_estudiante, programa_id)
-    ids_billing = set()      # Billing: solo id_estudiante (no trae programa)
+    pares_sappo = set()
+    pares_applicant = set()
+    ids_billing = set()
 
     for nombre in ["student", "enrollment"]:
         datos = resultados_fetch.get(nombre, {}).get("datos", {})
@@ -184,9 +183,15 @@ def run():
     _procesar_billing(resultados_fetch, sc_por_estudiante)
     _procesar_billing2(resultados_fetch, sc_por_estudiante)
 
-    # Refresca aprobadas/reprobadas/cursando de SAPPO para pagos de los últimos 30 días
-    # (billing2 normal solo procesa pagos del día; este paso mantiene actualizado
-    # el avance académico para los registros recientes ya guardados).
+    # Refresca SC nulo en ws_billing de los últimos 30 días
+    # (los registros cuyo SC falló en corridas anteriores se reparan aquí)
+    try:
+        import refresh_sc_billing
+        refresh_sc_billing.run()
+    except Exception as e:
+        logger.error(f"[refresh_sc_billing] Error: {e}")
+
+    # Refresca aprobadas/reprobadas/cursando de SAPPO para pagos recientes en ws_billing2
     try:
         import refresh_billing2
         refresh_billing2.run()
@@ -199,6 +204,10 @@ def run():
     logger.info("=" * 60)
 
 
+# ============================================================
+# Helpers
+# ============================================================
+
 def _procesar_periodico(nombre: str, resultados_fetch: dict, sc_map: dict, fn_procesar):
     """Helper que itera periodos y llama a fn_procesar para cada uno."""
     fetch = resultados_fetch.get(nombre, {})
@@ -206,7 +215,6 @@ def _procesar_periodico(nombre: str, resultados_fetch: dict, sc_map: dict, fn_pr
     errores_fetch = fetch.get("errores", [])
 
     if not datos and errores_fetch:
-        # Todos los periodos fallaron en el WS
         registrar_control(
             endpoint=nombre, periodo=None,
             registros_ws=0, sc_resueltos=0,
@@ -329,6 +337,9 @@ def _procesar_billing2(resultados_fetch: dict, sc_por_estudiante: dict):
             status="error", error_msg=str(e),
             duracion_seg=time.time() - inicio,
         )
+
+
+def _enviar_alerta(mensaje: str):
     """Envía alerta por email si las variables SMTP están configuradas."""
     smtp_host = os.environ.get("SMTP_HOST")
     if not smtp_host:
