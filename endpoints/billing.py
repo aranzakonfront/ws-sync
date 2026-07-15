@@ -40,7 +40,7 @@ def get_params_fecha() -> dict:
     fecha_inicio = ayer, fecha_fin = hoy, en formato dd/mm/yyyy.
     """
     hoy = date.today()
-    ayer = hoy - timedelta(days=1)
+    ayer = hoy - timedelta(days=15)
     return {
         "fecha_inicio": ayer.strftime("%d/%m/%Y"),
         "fecha_fin": hoy.strftime("%d/%m/%Y"),
