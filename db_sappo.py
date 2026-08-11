@@ -2,17 +2,9 @@
 db_sappo.py
 Conexión a SAPPO (PostgreSQL externo, solo lectura) y queries para:
   1. Obtener periodos académicos
-  2. Resolver SC (Socio Comercial) en batch:
-     - get_sc_batch_por_programa(): por (estudiante_id, programa_id) -> usado en
-       Student, Enrollment y fallback de Applicant.
-     - get_sc_batch_sin_programa(): por estudiante_id solo, toma el primer
-       registro -> usado como último fallback (Billing sin match, Applicant
-       sin programa_id confirmado).
-
-Usa psycopg (v3) en vez de psycopg2: el paquete psycopg[binary] empaqueta
-su propia copia de libpq, evitando el error "libpq.so.5: cannot open
-shared object file" que ocurre con psycopg2-binary en algunos entornos
-de Railway/Nixpacks.
+  2. Resolver SC (Socio Comercial) en batch
+  3. Obtener totales de materias por estudiante (para billing2)
+  4. Obtener tipo_materia por (estudiante, periodo, materia) (para enrollment observaciones)
 """
 
 import os
@@ -34,7 +26,7 @@ def get_sappo_connection():
         user=os.environ["SAPPO_USER"],
         password=os.environ["SAPPO_PASSWORD"],
         connect_timeout=30,
-        options="-c statement_timeout=60000"   # 60 seg máx por query
+        options="-c statement_timeout=60000"
     )
 
 
@@ -42,26 +34,15 @@ def get_periodos():
     """
     Retorna un dict con los tres periodos relevantes y las banderas
     de si se debe incluir el periodo anterior para cada endpoint.
-
-    Estructura retornada:
-    {
-        'actual':   {'id': '202592', 'arranque': 2, 'start_date': date(...), 'end_date': date(...)},
-        'anterior': {'id': '202581', 'arranque': 1, ...} | None,
-        'siguiente':{'id': '202601', 'arranque': 3, ...} | None,
-        'incluir_anterior_14': bool,   # Enrollment, Student, Applicant
-        'incluir_anterior_7':  bool,   # Section
-    }
+    Usa start_date <= CURRENT_DATE para no depender de end_date
+    (que a veces está incorrecta en SAPPO).
     """
     from datetime import date, timedelta
 
     with get_sappo_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
 
-            # Periodo actual: el más reciente cuyo inicio no supere hoy.
-            # Usamos start_date <= CURRENT_DATE ORDER BY start_date DESC
-            # en vez de BETWEEN start_date AND end_date, porque SAPPO a veces
-            # tiene end_date incorrecta (más corta que la real) y el job
-            # dejaría de correr aunque el periodo siga vigente.
+            # Periodo actual: el más reciente cuyo inicio no supere hoy
             cur.execute("""
                 SELECT p.id, p.arranque, p.start_date, p.end_date
                 FROM core.periodo p
@@ -108,23 +89,15 @@ def get_periodos():
 
 def get_sc_batch_por_programa(pares_estudiante_programa: list) -> dict:
     """
-    Dado una lista de tuplas (id_estudiante, programa_id), retorna un dict
+    Dado una lista de tuplas (id_estudiante, programa_id), retorna
     {(id_estudiante, programa_id): SC}.
-
-    Usado para Student, Enrollment y Applicant (vía fallback), donde el SC
-    depende del programa específico del alumno.
-
-    Query real:
-        SELECT ep.socio_comercial_id
-        FROM core.estudiante_programa ep
-        WHERE ep.estudiante_id = %s AND ep.programa_id = %s
     """
     if not pares_estudiante_programa:
         return {}
 
     pares_unicos = list(set(pares_estudiante_programa))
     ids_estudiante = [p[0] for p in pares_unicos]
-    ids_programa = [p[1] for p in pares_unicos]
+    ids_programa   = [p[1] for p in pares_unicos]
 
     with get_sappo_connection() as conn:
         with conn.cursor() as cur:
@@ -141,9 +114,9 @@ def get_sc_batch_por_programa(pares_estudiante_programa: list) -> dict:
 
             resultado = {}
             for row in cur.fetchall():
-                id_est = str(row[0]).strip() if row[0] else None
+                id_est      = str(row[0]).strip() if row[0] else None
                 programa_id = str(row[1]).strip() if row[1] else None
-                sc = str(row[2]).strip() if row[2] else None
+                sc          = str(row[2]).strip() if row[2] else None
                 if id_est and programa_id:
                     resultado[(id_est, programa_id)] = sc
 
@@ -157,11 +130,8 @@ def get_sc_batch_por_programa(pares_estudiante_programa: list) -> dict:
 def get_sc_batch_sin_programa(ids_estudiante: list) -> dict:
     """
     Dado una lista de id_estudiante, retorna {id_estudiante: SC} tomando
-    el primer registro que SAPPO devuelva para ese alumno, sin filtrar por programa.
-
-    Usado únicamente como fallback para Billing, cuando el alumno no aparece
-    en Student/Enrollment/Applicant de la misma corrida (no hay SC ya
-    resuelto que reutilizar).
+    el primer registro que SAPPO devuelva, sin filtrar por programa.
+    Fallback para Billing y casos sin programa confirmado.
     """
     if not ids_estudiante:
         return {}
@@ -170,8 +140,6 @@ def get_sc_batch_sin_programa(ids_estudiante: list) -> dict:
 
     with get_sappo_connection() as conn:
         with conn.cursor() as cur:
-            # DISTINCT ON + ctid: toma el primer registro físico que SAPPO
-            # devuelva por estudiante_id, sin imponer una regla de "más reciente".
             cur.execute("""
                 SELECT DISTINCT ON (ep.estudiante_id)
                     ep.estudiante_id,
@@ -184,7 +152,7 @@ def get_sc_batch_sin_programa(ids_estudiante: list) -> dict:
             resultado = {}
             for row in cur.fetchall():
                 id_est = str(row[0]).strip() if row[0] else None
-                sc = str(row[1]).strip() if row[1] else None
+                sc     = str(row[1]).strip() if row[1] else None
                 if id_est:
                     resultado[id_est] = sc
 
@@ -197,11 +165,10 @@ def get_sc_batch_sin_programa(ids_estudiante: list) -> dict:
 
 def get_totales_materias_batch(ids_estudiante: list) -> dict:
     """
-    Consulta report.totales_materias_estudiante en SAPPO para una lista de IDs.
-    Retorna {id_estudiante: {aprobadas, reprobadas, cursando, precio_neto_materia}}.
-
-    Usado por el procesador de ws_billing2 para enriquecer los pagos del día
-    con el avance académico y precio neto de materias del alumno.
+    Consulta report.totales_materias_estudiante para una lista de IDs.
+    Retorna {id_estudiante: {aprobadas, reprobadas, cursando,
+                              materias_cargadas, precio_neto_materia}}.
+    Usado por billing2 para enriquecer los pagos del día.
     """
     if not ids_estudiante:
         return {}
@@ -237,5 +204,60 @@ def get_totales_materias_batch(ids_estudiante: list) -> dict:
     logger.info(
         f"Totales materias resueltos desde SAPPO: "
         f"{len(resultado)}/{len(ids_unicos)} IDs"
+    )
+    return resultado
+
+
+def get_tipo_materia_batch(ternas: list) -> dict:
+    """
+    Dado una lista de tuplas (estudiante_id, periodo_id, materia_id),
+    retorna {(estudiante_id, periodo_id, materia_id): tipo_materia}.
+
+    El valor puede ser None si no hay registro en SAPPO para esa
+    combinación — se guarda como NULL en la columna observaciones.
+
+    Query base:
+        SELECT tipo_materia
+        FROM report.comparativo_materias_inscritas
+        WHERE periodo_id = %s
+          AND estudiante_id = %s
+          AND materia_id = %s
+    """
+    if not ternas:
+        return {}
+
+    ternas_unicas = list(set(ternas))
+    ids_estudiante = [t[0] for t in ternas_unicas]
+    ids_periodo    = [t[1] for t in ternas_unicas]
+    ids_materia    = [t[2] for t in ternas_unicas]
+
+    with get_sappo_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    cmi.estudiante_id,
+                    cmi.periodo_id,
+                    cmi.materia_id,
+                    cmi.tipo_materia
+                FROM report.comparativo_materias_inscritas cmi
+                WHERE (cmi.estudiante_id, cmi.periodo_id, cmi.materia_id) IN (
+                    SELECT * FROM unnest(%s::text[], %s::text[], %s::text[])
+                )
+            """, (ids_estudiante, ids_periodo, ids_materia))
+
+            resultado = {}
+            for row in cur.fetchall():
+                id_est   = str(row[0]).strip() if row[0] else None
+                per_id   = str(row[1]).strip() if row[1] else None
+                mat_id   = str(row[2]).strip() if row[2] else None
+                tipo_mat = str(row[3]).strip() if row[3] else None
+                if id_est and per_id and mat_id:
+                    resultado[(id_est, per_id, mat_id)] = tipo_mat
+
+    resueltos = sum(1 for v in resultado.values() if v)
+    logger.info(
+        f"tipo_materia resueltos desde SAPPO: "
+        f"{resueltos}/{len(ternas_unicas)} ternas "
+        f"({len(ternas_unicas) - resueltos} sin valor en SAPPO → NULL)"
     )
     return resultado
