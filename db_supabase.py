@@ -240,3 +240,61 @@ def registrar_control(
         "error_msg": error_msg,
         "duracion_seg": round(duracion_seg, 2),
     }).execute()
+
+def get_enrollments_activos_periodo(periodo: str) -> dict:
+    client = get_client()
+    resultado = {}
+    page_size = 1000
+    offset = 0
+    while True:
+        resp = (
+            client.table("ws_enrollment")
+            .select("id_enrollment,id_estudiante,id_materia")
+            .eq("periodo", periodo)
+            .eq("activo", True)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        filas = resp.data or []
+        for fila in filas:
+            resultado[fila["id_enrollment"]] = {
+                "id_estudiante": fila.get("id_estudiante"),
+                "id_materia":    fila.get("id_materia"),
+            }
+        if len(filas) < page_size:
+            break
+        offset += page_size
+    return resultado
+
+
+def marcar_enrollments_inactivos(ids_enrollment: list, periodo: str):
+    if not ids_enrollment:
+        return
+    client = get_client()
+    registros_upsert = []
+    for i in range(0, len(ids_enrollment), 100):
+        chunk = ids_enrollment[i: i + 100]
+        resp = (
+            client.table("ws_enrollment")
+            .select("*")
+            .in_("id_enrollment", chunk)
+            .eq("periodo", periodo)
+            .execute()
+        )
+        for fila in resp.data or []:
+            registro = {k: v for k, v in fila.items() if k not in ("row_hash", "updated_at")}
+            registro["activo"] = False
+            registro["row_hash"] = calcular_hash(registro)
+            registros_upsert.append(registro)
+    if registros_upsert:
+        upsert_registros("ws_enrollment", registros_upsert, batch_size=100)
+    logger.info(f"[ws_enrollment][{periodo}] {len(ids_enrollment)} registros marcados inactivos")
+
+
+def insertar_deletes_enrollment(entradas: list):
+    if not entradas:
+        return
+    client = get_client()
+    for i in range(0, len(entradas), 500):
+        client.table("sync_queue_deletes_enrollment").insert(entradas[i: i + 500]).execute()
+    logger.info(f"{len(entradas)} entradas insertadas en sync_queue_deletes_enrollment")
